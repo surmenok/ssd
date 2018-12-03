@@ -45,19 +45,20 @@ class Trainer:
                     print('[%d, %5d] loss: %.3f, class_loss: %.3f, loc_loss: %.3f' %
                           (epoch + 1, i + 1, running_losses[0] / output_interval,
                            running_losses[1] / output_interval, running_losses[2] / output_interval))
-                    running_loss = 0.0
                     running_losses = np.zeros((3,))
 
             val_dl_iterator = iter(val_dl)
             running_losses = np.zeros((3,))
             num_batches = 0
-            for j in range(len(val_batch_size) // val_batch_size):
+            for j in range(len(val_ds) // val_batch_size):
                 x_val, y_val = next(val_dl_iterator)
                 local_x_val = x_val.to(self.device)
                 local_y_val = [(l.to(self.device), c.to(self.device)) for l, c in y_val]
                 val_predicted = model(local_x_val)
-                val_losses = loss_fn.batch_losses(val_predicted, local_y_val)
-                val_loss = loss_fn.loss(val_predicted, local_y_val)
+                val_losses = loss_fn(val_predicted, local_y_val)
+                running_losses += np.array([val_losses['total'].item(),
+                                            val_losses['classification'].item(),
+                                            val_losses['localization'].item()])
                 num_batches += 1
 
             print('[%d, %5s] val loss: %.3f, val_class_loss: %.3f, val_loc_loss: %.3f' %
