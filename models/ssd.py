@@ -33,6 +33,10 @@ class OutConv(nn.Module):
         self.k = k
 
     def forward(self, x):
+        # TODO: To combine outputs of a few layers of the feature pyramid, flatten each of them
+        # and concatenate results.
+        # Anchor boxes will have to follow the order of pyramid layers
+        # TODO: Find a way to write a unit test that checks that structure of the model reflects anchor box coordinates
         class_conv = self.conv_classification(x)
         class_flattened = self.flatten(class_conv)
 
@@ -43,8 +47,10 @@ class OutConv(nn.Module):
 
     def flatten(self, x):
         batch_size, num_features, height, width = x.size()
+        # Permute to shape: (batch_size, height, width, num_features)
         x = x.permute(0, 2, 3, 1).contiguous()
-        return x.view(batch_size, -1, num_features // self.k)  # Shape (batch_size, k*w*h, outputs_per_anchor)
+        # Reshape to shape (batch_size, k*w*h, outputs_per_anchor)
+        return x.view(batch_size, -1, num_features // self.k)
 
 
 class SSDHead(nn.Module):

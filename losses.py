@@ -67,7 +67,14 @@ def jaccard_overlap(boxes1, boxes2):
 
 
 def create_anchors(grid_size: int=4):
+    # TODO: Change this to allow for different grid size on x and y axis
     anchor_size = 1. / grid_size
+
+    # TODO: Create more anchor boxes:
+    # Different grids, e.g. 1, 2, 4
+    # Different zoom levels, e.g. 0.75, 1, 1.3
+    # Different aspect ratios, e.g. (1., 1.), (1., 0.5), (0.5, 1)
+    # Check what anchor boxes were used in the SSD paper
 
     # Centers
     anchor_center_coords = np.linspace(anchor_size / 2, 1 - anchor_size / 2, grid_size)
