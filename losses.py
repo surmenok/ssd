@@ -119,12 +119,33 @@ def activation_to_bbox_corners(activation, anchors, anchor_size):
 
 
 def map_ground_truth(bounding_boxes, anchor_boxes, threshold=0.5):
+    """
+    Assign a ground truth object to every anchor box as described in SSD paper
+    :param bounding_boxes:
+    :param anchor_boxes:
+    :param threshold:
+    :return:
+    """
+
+    # overlaps shape: (bounding_boxes, anchor_boxes)
     overlaps = jaccard_overlap(bounding_boxes, anchor_boxes)
+
+    # best_bbox_overlaps and best_bbox_ids shape: (bounding_boxes)
+    # best_bbox_overlaps: IoU of overlap with the best anchor box for every ground truth box
+    # best_bbox_ids: indexes of anchor boxes
     best_bbox_overlaps, best_bbox_ids = overlaps.max(1)
+
+    # overlaps and bbox_ids shape: (anchor_boxes)
+    # IoU and indexes of bounding boxes with the best overlap for every anchor box
     overlaps, bbox_ids = overlaps.max(0)
+
+    # Combine the two:
+    # best_bbox_overlaps takes precedence
     overlaps[best_bbox_ids] = 2
     for bbox_id, anchor_id in enumerate(best_bbox_ids):
         bbox_ids[anchor_id] = bbox_id
+
+    # Check for the threshold and return binary mask and bbox ids for each anchor
     is_positive = overlaps > threshold
     return is_positive, bbox_ids
 
