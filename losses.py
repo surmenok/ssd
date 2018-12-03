@@ -182,6 +182,9 @@ class SSDLoss:
         # Filter out empty boxes
         y_boxes_filtered, y_classes_filtered = filter_ground_truth(y_boxes, y_classes)
 
+        # Convert bounding box activations to coordinates in the same space as y_boxes ground truth
+        boxes_activation_corners = activation_to_bbox_corners(boxes_activation, self.anchors, self.anchor_size)
+
         # Map ground truth bounding boxes to anchor boxes
         # is_positive has shape (anchors), is 1 when anchor box is matched to a bounding box, 0 otherwise
         is_positive, bbox_ids = map_ground_truth(y_boxes_filtered, self.anchor_corners)
@@ -200,9 +203,6 @@ class SSDLoss:
         # Assign background class to all empty anchor boxes
         is_negative = is_positive == 0
         ground_truth_classes[is_negative] = self.num_classes
-
-        # Convert bounding box activations to coordinates in the same space as y_boxes ground truth
-        boxes_activation_corners = activation_to_bbox_corners(boxes_activation, self.anchors, self.anchor_size)
 
         # Now, ground_truth_bboxes and boxes_activation_corners are in the same space and have the same shape
         # Calculate mean absolute error
