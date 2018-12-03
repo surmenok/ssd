@@ -141,7 +141,7 @@ class SSDLoss:
 
     def calculate_example_loss(self, y_boxes, y_classes, boxes_activation, classes_activation):
         # TODO: This line will change when width and height are different
-        y_boxes = y_boxes / self.image_size
+        y_boxes = y_boxes / self.image_size[0]
 
         y_boxes_filtered, y_classes_filtered = filter_ground_truth(y_boxes, y_classes)
         is_positive, bbox_ids = map_ground_truth(y_boxes_filtered, self.anchor_corners)
@@ -194,4 +194,7 @@ class SSDLoss:
         #   tuple[1]: ground truth classes. long tensor of shape (num_objects,)
 
         classification_loss, localization_loss = self.batch_losses(predicted, target)
-        return 10 * classification_loss + localization_loss
+        losses = {'classification': classification_loss,
+                  'localization': localization_loss,
+                  'total': 10 * classification_loss + localization_loss}
+        return losses
