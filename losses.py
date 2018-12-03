@@ -38,14 +38,6 @@ class BinaryCrossEntropyLoss(nn.Module):
         return None
 
 
-def filter_ground_truth(boxes, classes):
-    heights = boxes[:, 2] - boxes[:, 0]
-    to_keep = (heights > 0).nonzero()[:, 0]
-    filtered_boxes = boxes[to_keep.detach()]
-    filtered_classes = classes[to_keep.detach()]
-    return filtered_boxes, filtered_classes
-
-
 def intersect(boxes1: TensorType, boxes2: TensorType) -> TensorType:
     """
     Finds overlap between all boxes in boxes1 and all boxes in boxes2
@@ -118,6 +110,7 @@ def activation_to_bbox_corners(activation, anchors, anchor_size):
     return box_hw_to_corners(torch.cat([activation_centers, activation_hw], dim=1))
 
 
+# TODO: Check what threshold was used in SSD paper
 def map_ground_truth(bounding_boxes, anchor_boxes, threshold=0.5):
     """
     Assign a ground truth object to every anchor box as described in SSD paper
@@ -179,22 +172,19 @@ class SSDLoss:
         # TODO: This line will change when width and height are different
         y_boxes = y_boxes / self.image_size[0]
 
-        # Filter out empty boxes
-        y_boxes_filtered, y_classes_filtered = filter_ground_truth(y_boxes, y_classes)
-
         # Convert bounding box activations to coordinates in the same space as y_boxes ground truth
         boxes_activation_corners = activation_to_bbox_corners(boxes_activation, self.anchors, self.anchor_size)
 
         # Map ground truth bounding boxes to anchor boxes
         # is_positive has shape (anchors), is 1 when anchor box is matched to a bounding box, 0 otherwise
-        is_positive, bbox_ids = map_ground_truth(y_boxes_filtered, self.anchor_corners)
+        is_positive, bbox_ids = map_ground_truth(y_boxes, self.anchor_corners)
 
         # Get indexes of non-empty anchor boxes
         positive_anchor_ids = torch.nonzero(is_positive)[:, 0]
 
         # Get ground truth bounding box coordinates for each anchor box
         # Shape of ground_truth_bboxes is (anchors, 4)
-        ground_truth_bboxes = y_boxes_filtered[bbox_ids]
+        ground_truth_bboxes = y_boxes[bbox_ids]
 
         # Get ground truth object class IDs for each anchor box
         # Shape of ground_truth_classes is (anchors)
