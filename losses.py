@@ -161,30 +161,60 @@ class SSDLoss:
         self.calculate_classification_loss = BinaryCrossEntropyLoss(num_classes)
 
     def calculate_example_loss(self, y_boxes, y_classes, boxes_activation, classes_activation):
+        """
+        Calculate localization and classification loss for one example
+        :param y_boxes: Ground truth bounding box coordinates. Shape: (boxes, 4).
+            The last dimension is (top, left, bottom, right) in image frame
+            where the top left corner of the image is (0, 0), the bottom right corner is (1, 1)
+        :param y_classes: Ground truth object classes. Shape: (boxes). Type: int64. Contains IDs of classes.
+        :param boxes_activation: Predicted bounding boxes. Shape: (boxes, 4).
+            The last dimension represents (center_top, center_left, height, width)
+            with respect to center and size of the anchor box. See activation_to_bbox_corners for transformation.
+        :param classes_activation: Predicted probabilities of object classes. Shape: (boxes, classes).
+        :return: localization_loss, classification_loss (scalars)
+        """
+
+        # Map ground truth box coordinates to space where the top left corner of the image is (0, 0),
+        # the bottom right corner is (1, 1)
         # TODO: This line will change when width and height are different
         y_boxes = y_boxes / self.image_size[0]
 
+        # Filter out empty boxes
         y_boxes_filtered, y_classes_filtered = filter_ground_truth(y_boxes, y_classes)
+
+        # Map ground truth bounding boxes to anchor boxes
+        # is_positive has shape (anchors), is 1 when anchor box is matched to a bounding box, 0 otherwise
         is_positive, bbox_ids = map_ground_truth(y_boxes_filtered, self.anchor_corners)
 
+        # Get indexes of non-empty anchor boxes
         positive_anchor_ids = torch.nonzero(is_positive)[:, 0]
 
+        # Get ground truth bounding box coordinates for each anchor box
+        # Shape of ground_truth_bboxes is (anchors, 4)
         ground_truth_bboxes = y_boxes_filtered[bbox_ids]
+
+        # Get ground truth object class IDs for each anchor box
+        # Shape of ground_truth_classes is (anchors)
         ground_truth_classes = y_classes[bbox_ids]
 
+        # Assign background class to all empty anchor boxes
         is_negative = is_positive == 0
         ground_truth_classes[is_negative] = self.num_classes
 
+        # Convert bounding box activations to coordinates in the same space as y_boxes ground truth
         boxes_activation_corners = activation_to_bbox_corners(boxes_activation, self.anchors, self.anchor_size)
 
+        # Now, ground_truth_bboxes and boxes_activation_corners are in the same space and have the same shape
+        # Calculate mean absolute error
         diff = ground_truth_bboxes[positive_anchor_ids] - boxes_activation_corners[positive_anchor_ids]
         localization_loss = diff.abs().mean()
 
+        # Calculate classification loss
         classification_loss = self.calculate_classification_loss(classes_activation, ground_truth_classes)
 
         return localization_loss, classification_loss
 
-    def batch_losses(self, predicted, target):
+    def loss(self, predicted, target):
         # predicted: a tuple (locations, classes)
         #   locations.shape: (batch_size, num_anchors, 4*k)
         #   classes.shape: (batch_size, num_anchors, k * (num_classes + 1))
@@ -204,17 +234,10 @@ class SSDLoss:
             c, l = self.calculate_example_loss(y_boxes, y_classes, boxes_activation, classes_activation)
             classification_loss_sum += c
             localization_loss_sum += l
-        return classification_loss_sum / len(target), localization_loss_sum / len(target)
 
-    def loss(self, predicted, target):
-        # predicted: a tuple (locations, classes)
-        #   locations.shape: (batch_size, num_anchors, 4*k)
-        #   classes.shape: (batch_size, num_anchors, k * (num_classes + 1))
-        # target: list of tuples (one tuple for each example in a batch)
-        #   tuple[0]: ground truth boxes. float32 tensor of shape (num_objects, 4)
-        #   tuple[1]: ground truth classes. long tensor of shape (num_objects,)
+        classification_loss = classification_loss_sum / len(target)
+        localization_loss = localization_loss_sum / len(target)
 
-        classification_loss, localization_loss = self.batch_losses(predicted, target)
         losses = {'classification': classification_loss,
                   'localization': localization_loss,
                   'total': 10 * classification_loss + localization_loss}
