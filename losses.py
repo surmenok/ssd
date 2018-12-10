@@ -9,6 +9,7 @@ from torch.autograd import Variable as V
 from torch.nn import functional as F
 from torch import tensor as T
 from custom_types import TensorType
+from typing import List, Tuple
 
 
 class BinaryCrossEntropyLoss(nn.Module):
@@ -66,28 +67,48 @@ def jaccard_overlap(boxes1, boxes2):
     return intersects.float() / unions.float()
 
 
-def create_anchors(grid_size: int=4):
-    # TODO: Change this to allow for different grid size on x and y axis
-    anchor_size = 1. / grid_size
+def create_anchors(grid_sizes: List[Tuple[int, int]], zoom_levels, aspect_ratios):
+    all_level_anchors = []
+    for grid_size in grid_sizes:
+        level_anchors = create_anchors_for_one_level(grid_size, zoom_levels, aspect_ratios)
+        all_level_anchors.append(level_anchors)
+    return T(np.vstack(all_level_anchors)).float()
 
-    # TODO: Create more anchor boxes:
-    # Different grids, e.g. 1, 2, 4
-    # Different zoom levels, e.g. 0.75, 1, 1.3
-    # Different aspect ratios, e.g. (1., 1.), (1., 0.5), (0.5, 1)
-    # Check what anchor boxes were used in the SSD paper
+
+def create_anchors_for_one_level(grid_size: Tuple[int, int], zoom_levels, aspect_ratios):
+    """
+    Creates anchor box coordinates for one level of feature pyramid.
+    zoom_levels * aspect_ratios boxes for each grid cell.
+    Shape of the output: (grid_size[0] * grid_size[1] * len(zoom_levels) * len(aspect_ratios), 4)
+    Order of repeats: grid_size[0], grid_size[1], zoom_levels, aspect_ratios
+    """
+    grid_cell_size = (1. / grid_size[0], 1. / grid_size[1])
+
+    # Create an array of heights and widths, each of length len(zoom_levels) * len(aspect_ratios)
+    # for all combinations of zoom levels and aspect ratios
+    expanded_zoom_levels = np.repeat(np.asarray(zoom_levels, dtype=np.float), len(aspect_ratios))
+    expanded_aspect_ratios = np.tile(np.asarray(aspect_ratios, dtype=np.float), len(zoom_levels))
+    h = grid_cell_size[0] * expanded_zoom_levels / np.sqrt(expanded_aspect_ratios)
+    w = grid_cell_size[1] * expanded_zoom_levels * np.sqrt(expanded_aspect_ratios)
+    heights = np.tile(h, grid_size[0] * grid_size[1]).reshape(-1, 1)
+    widths = np.tile(w, grid_size[0] * grid_size[1]).reshape(-1, 1)
+
+    # k is a number of ahcnor boxes per grid cell
+    k = len(zoom_levels) * len(aspect_ratios)
 
     # Centers
-    anchor_center_coords = np.linspace(anchor_size / 2, 1 - anchor_size / 2, grid_size)
-    anchor_center_x = np.repeat(anchor_center_coords, grid_size).reshape(-1, 1)
-    anchor_center_y = np.tile(anchor_center_coords, grid_size).reshape(-1, 1)
-    anchor_centers = np.concatenate([anchor_center_x, anchor_center_y], axis=1)
+    anchor_center_coords_x = np.linspace(grid_cell_size[0] / 2, 1 - grid_cell_size[0] / 2, grid_size[0])
+    anchor_center_coords_y = np.linspace(grid_cell_size[1] / 2, 1 - grid_cell_size[1] / 2, grid_size[1])
 
-    # Heights and widths
-    anchor_hw = np.ones((grid_size ** 2, 2)) * anchor_size
+    # Repeat each X center. Result will be: [x1, x1, ..., x2, x2, ..., xn, xn, ...]
+    anchor_center_x = np.repeat(anchor_center_coords_x, grid_size[1] * k).reshape(-1, 1)
 
-    # anchors = V(T(np.concatenate([anchor_centers, anchor_hw], axis=1)), requires_grad=False).float()
-    anchors = T(np.concatenate([anchor_centers, anchor_hw], axis=1)).float()
+    # First repeat y coordinate k times, then tile them grid_size[0] times
+    anchor_center_y = np.repeat(anchor_center_coords_y, k)
+    anchor_center_y = np.tile(anchor_center_y, grid_size[0]).reshape(-1, 1)
 
+    # Concatenate x, y, h, w to the final 2D array
+    anchors = np.concatenate([anchor_center_x, anchor_center_y, heights, widths], axis=1)
     return anchors
 
 
@@ -97,7 +118,7 @@ def box_hw_to_corners(boxes):
     return torch.cat([top_left, bottom_right], dim=1)
 
 
-def activation_to_bbox_corners(activation, anchors, anchor_size):
+def activation_to_bbox_corners(activation, anchors):
     """
     Convert outputs of bbox head of the model for one example to coordinates
     of corners of bounding boxes in image frame, where coordinates are from 0 to 1.
@@ -106,13 +127,12 @@ def activation_to_bbox_corners(activation, anchors, anchor_size):
         Center coordinates (-1; 1) range maps to (-0.5*anchor_height; 0.5*anchor_width) relative to the anchor center
         Height and width (-1; 1) range maps to (0.5; 1.5)*anchor_box height and width.
     :param anchors: Type: float32. Shape: (anchors, 4)
-    :param anchor_size: Size of an anchor box relative to the image. Type: float.
     :return: Type: float32. Shape: (anchors, 4)
     """
     # tanh to squeeze values into range (-1;1)
     activation_tanh = torch.tanh(activation)
     #
-    activation_centers = (activation_tanh[:, :2] / 2 * anchor_size) + anchors[:, :2]
+    activation_centers = (activation_tanh[:, :2] / 2 * anchors[:, :2]) + anchors[:, :2]
     activation_hw = (activation_tanh[:, 2:] / 2 + 1) * anchors[:, 2:]
     return box_hw_to_corners(torch.cat([activation_centers, activation_hw], dim=1))
 
@@ -151,10 +171,9 @@ def map_ground_truth(bounding_boxes, anchor_boxes, threshold=0.5):
 
 
 class SSDLoss:
-    def __init__(self, anchors, anchor_size, image_size, num_classes):
+    def __init__(self, anchors, image_size, num_classes):
         self.anchors = anchors
         self.anchor_corners = box_hw_to_corners(anchors)
-        self.anchor_size = anchor_size
         self.image_size = image_size
         self.num_classes = num_classes
 
@@ -180,7 +199,7 @@ class SSDLoss:
         y_boxes = y_boxes / self.image_size[0]
 
         # Convert bounding box activations to coordinates in the same space as y_boxes ground truth
-        boxes_activation_corners = activation_to_bbox_corners(boxes_activation, self.anchors, self.anchor_size)
+        boxes_activation_corners = activation_to_bbox_corners(boxes_activation, self.anchors)
 
         # Map ground truth bounding boxes to anchor boxes
         # is_positive has shape (anchors), is 1 when anchor box is matched to a bounding box, 0 otherwise

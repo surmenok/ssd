@@ -2,6 +2,7 @@
 Based on code from https://github.com/fastai/fastai/blob/master/courses/dl2/pascal-multi.ipynb
 """
 
+import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
@@ -59,19 +60,34 @@ class SSDHead(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.conv1 = Conv(512, 256, 1)
-        # self.conv2 = Conv(256, 256, 2)
+        self.conv2 = Conv(256, 256, 2)
         self.conv3 = Conv(256, 256, 2)
-        self.out_conv = OutConv(256, num_labels, k, classification_bias)
+        self.conv4 = Conv(256, 256, 2)
+        self.out_conv1 = OutConv(256, num_labels, k, classification_bias)
+        self.out_conv2 = OutConv(256, num_labels, k, classification_bias)
+        self.out_conv3 = OutConv(256, num_labels, k, classification_bias)
+        self.out_conv4 = OutConv(256, num_labels, k, classification_bias)
 
     def forward(self, x):
         # Expected input shape: (num_batches, 512, 7, 7) after resnet34 backbone
         x = F.relu(x)
         x = self.dropout(x)
+
         x = self.conv1(x)  # Out shape: (num_batches, 256, 7, 7)
-        # x = self.conv2(x)
-        x = self.conv3(x)  # Out shape: (num_batches, 256, 4, 4)
-        x = self.out_conv(x)  # Out shape: (num_batches, 16 * k, 4), (num_batches, 16 * k, num_labels + 1)
-        return x
+        out1 = self.out_conv1(x)  # Out shape: (num_batches, 49 * k, 4), (num_batches, 49 * k, num_labels + 1)
+
+        x = self.conv2(x)  # Out shape: (num_batches, 256, 4, 4)
+        out2 = self.out_conv2(x)  # Out shape: (num_batches, 16 * k, 4), (num_batches, 16 * k, num_labels + 1)
+
+        x = self.conv3(x)  # Out shape: (num_batches, 256, 2, 2)
+        out3 = self.out_conv3(x)  # Out shape: (num_batches, 4 * k, 4), (num_batches, 4 * k, num_labels + 1)
+
+        x = self.conv4(x)  # Out shape: (num_batches, 256, 1, 1)
+        out4 = self.out_conv4(x)  # Out shape: (num_batches, k, 4), (num_batches, k, num_labels + 1)
+
+        # When we add more heads from different levels of feature pyramid, we can stack them along dimension 1
+        outs = [out1, out2, out3, out4]
+        return torch.cat([out[0] for out in outs], dim=1), torch.cat([out[1] for out in outs], dim=1)
 
 
 class SSDModel(nn.Module):
@@ -82,6 +98,5 @@ class SSDModel(nn.Module):
 
     def forward(self, x):
         x = self.base_model(x)
-        print(x.size())
         x = self.head(x)
         return x
