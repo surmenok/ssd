@@ -131,7 +131,7 @@ def activation_to_bbox_corners(activation, anchors):
     """
     # tanh to squeeze values into range (-1;1)
     activation_tanh = torch.tanh(activation)
-    #
+
     activation_centers = (activation_tanh[:, :2] / 2 * anchors[:, :2]) + anchors[:, :2]
     activation_hw = (activation_tanh[:, 2:] / 2 + 1) * anchors[:, 2:]
     return box_hw_to_corners(torch.cat([activation_centers, activation_hw], dim=1))

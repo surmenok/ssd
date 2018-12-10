@@ -10,6 +10,8 @@ import unittest
 class TestSSDLoss(unittest.TestCase):
     def test_ssd_loss(self):
         anchors = losses.create_anchors(grid_sizes=[(7, 7), (4, 4), (2, 2), (1, 1)], zoom_levels=[1], aspect_ratios=[1])
+        self.assertEqual(anchors.size(), (70, 4))
+
         loss = losses.SSDLoss(anchors, constants.TRANSFORMED_IMAGE_SIZE, num_classes=10)
 
         num_labels = 10
