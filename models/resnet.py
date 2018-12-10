@@ -4,7 +4,7 @@ Based on the code from https://github.com/pytorch/vision/blob/master/torchvision
 
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
-from torchvision.models.resnet import BasicBlock, Bottleneck
+from torchvision.models.resnet import BasicBlock
 
 
 model_urls = {

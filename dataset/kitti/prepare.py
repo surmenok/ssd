@@ -199,4 +199,3 @@ def maybe_prepare_kitti_data(source_dir, output_dir, use_symlinks=True):
     )
 
     print('Done.')
-

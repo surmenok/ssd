@@ -64,12 +64,13 @@ class SSDHead(nn.Module):
         self.out_conv = OutConv(256, num_labels, k, classification_bias)
 
     def forward(self, x):
+        # Expected input shape: (num_batches, 512, 7, 7) after resnet34 backbone
         x = F.relu(x)
         x = self.dropout(x)
-        x = self.conv1(x)
+        x = self.conv1(x)  # Out shape: (num_batches, 256, 7, 7)
         # x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.out_conv(x)
+        x = self.conv3(x)  # Out shape: (num_batches, 256, 4, 4)
+        x = self.out_conv(x)  # Out shape: (num_batches, 16 * k, 4), (num_batches, 16 * k, num_labels + 1)
         return x
 
 
@@ -81,5 +82,6 @@ class SSDModel(nn.Module):
 
     def forward(self, x):
         x = self.base_model(x)
+        print(x.size())
         x = self.head(x)
         return x

@@ -1,5 +1,5 @@
 """
-Folder structure after preprocessing vis dataset.kitti.prepare.maybe_prepare_kitt_data:
+Folder structure after preprocessing vis dataset.kitti.prepare.maybe_prepare_kitti_data:
 
 kitti_2d
 - raw
